@@ -527,16 +527,16 @@ class U32ProgIPv6(U32Helper):
 
 
         if isinstance(addr, ipaddress.IPv6Network):
-            netmask = int(addr.netmask).to_bytes(16)
-            address = int(addr.network_address).to_bytes(16)
+            netmask = int(addr.netmask).to_bytes(16, sys.byteorder)
+            address = int(addr.network_address).to_bytes(16, sys.byteorder)
         else:
             address = int(addr).to_bytes(16)
             netmask = bytes([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                             0xff, 0xff])
         for nibble in range(0,4):
-            value = int.from_bytes(address[nibble*4:nibble*4 + 4])
-            mask = int.from_bytes(netmask[nibble*4:nibble*4 + 4])
+            value = int.from_bytes(address[nibble*4:nibble*4 + 4], sys.byteorder)
+            mask = int.from_bytes(netmask[nibble*4:nibble*4 + 4], sys.byteorder)
             self.add_code([
                 U32LD(location=location + nibble * 4, size=4),
                 U32SH(shift=0),
