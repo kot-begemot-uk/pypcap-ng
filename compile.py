@@ -10,10 +10,12 @@ from code_objects import finalize, ProgramEncoder
 import code_objects
 import bpf_objects
 import u32_objects
+import u32_tc_objects
 
 HELPERS = {
     "cbpf":bpf_objects.dispatcher,
     "u32":u32_objects.dispatcher,
+    "u32tc":u32_tc_objects.dispatcher,
 }
 
 
@@ -62,7 +64,7 @@ def main():
 
     parsed = finalize(pcap_parser.PARSER.parse(args["expression"]))
 
-    if args["format"] in ["iptables", "u32"]:
+    if args["format"] in ["iptables", "u32", "tc"]:
         parsed.drop_type(code_objects.ProgL2)
     
 
