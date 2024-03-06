@@ -163,7 +163,7 @@ class U32TCProgL3(U32TCHelper):
         )])
 
 
-class U32TCProgIPv4(U32TCHelper):
+class U32TCProgIPAny(U32TCHelper):
     '''Basic match on v4 address or network.
     '''
     def compile(self, compiler_state=None):
@@ -196,42 +196,13 @@ class U32TCProgIPv4(U32TCHelper):
         )])
 
 
-class U32TCProgIPv6(U32TCHelper):
-    '''Basic match on v4 address or network.
+class U32TCProgIPv4(U32TCProgIPAny):
+    '''Basic match on v6 address or network.
     '''
-    def compile(self, compiler_state=None):
-        '''Generate the actual code for the match'''
-        try:
-            addr = ipaddress.ip_address(self.match_object)
-        except ValueError:
-            # we let it raise a value error in this case
-            addr = ipaddress.ip_network(self.match_object)
 
-        super().compile(compiler_state)
-
-        if "srcordst" in self.pcap_obj.quals or "srcanddst" in self.pcap_obj.quals:
-            return
-
-        if isinstance(addr, ipaddress.IPv6Network):
-            mask = addr.prefixlen
-            value = str(addr.network_address)
-        else:
-            mask = "128"
-            value = str(addr)
-
-        if "src" in self.pcap_obj.quals:
-            qual = "src"
-        elif "dst" in self.pcap_obj.quals:
-            qual = "dst"
-        else:
-            raise ValueError("Must specify src or dst")
-
-        self.add_code([U32TCCode(
-            "ip",
-            qual,
-            f"{addr}/{mask}"
-        )])
-
+class U32TCProgIPv6(U32TCProgIPAny):
+    '''Basic match on v6 address or network.
+    '''
 
 class U32TCProgNOT(U32TCHelper):
     '''Negate the result of all frags.
