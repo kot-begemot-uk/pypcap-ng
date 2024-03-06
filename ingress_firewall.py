@@ -168,12 +168,12 @@ PREAMBLE_DATA = [
     "/sbin/iptables -D INPUT -j IFW",
     "/sbin/iptables -X IFW",
     "/sbin/iptables -N IFW",
-    "/sbin/iptables -A INPUT -j IFW",
+    "/sbin/iptables -I INPUT -j IFW",
 
     "/sbin/ip6tables -D INPUT -j IFW",
     "/sbin/ip6tables -X IFW",
     "/sbin/ip6tables -N IFW",
-    "/sbin/ip6tables -A INPUT -j IFW",
+    "/sbin/ip6tables -I INPUT -j IFW",
 ]
 
 CLOSURE_DATA = [
@@ -340,7 +340,7 @@ def main():
         FLUSHES["{}".format(args["mode"])]()
 
     PREAMBLES["{}".format(args["mode"])]()
-    for (interface, policy) in model["IngressNodeFirewallNodeState"]["interfaceIngressRules"].items():
+    for (interface, policy) in model.items():
         ingress = IngressFirewallPolicy(interface, policy)
         ingress.generate_pcap()
         if args.get("debug"):
@@ -354,6 +354,7 @@ def main():
         ingress.apply_to_hardware(ACTIVATORS["{}-{}".format(args["mode"], args["backend"])])
 
     ingress.apply_to_hardware(ACTIVATORS["{}-{}".format(args["mode"], args["backend"])])
+
     CLOSURES["{}".format(args["mode"])]()
 
 
