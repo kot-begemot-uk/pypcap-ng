@@ -22,6 +22,24 @@ from code_objects import AbstractCode, AbstractHelper
 
 IPV4_REGEXP = re.compile(r"(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})")
 
+def compute_val_mask(lower, upper):
+    '''Compute value and mask approximation from lower/upper bounds'''
+    valb = ""
+    fill = True
+    for bit in bin(lower)[:1:-1]:
+        if fill and bit == "0":
+            valb = bit + valb
+        else:
+            fill = False
+            valb = "1" + valb
+    val = int("0b" + valb, 2)
+    maskb = bin(upper - val)
+    if "0" in maskb[2:]:
+        mask = (1 << (len(maskb) - 3)) - 1
+    else:
+        mask = (1 << (len(maskb) - 2)) - 1
+    return val, mask
+
 
 
 SIZE_MODS = [None, "u8", "u16", None, "u32"]
@@ -38,7 +56,7 @@ COMP_OP = 3
 
 class U32TCCode(AbstractCode):
     '''U32TC variant of code generation'''
-    def __init__(self, sel_type, selector, size=4, val=None, mask=None, at=None):
+    def __init__(self, sel_type, selector, size=4, val=0, mask=0, at=None):
         super().__init__()
         self.sel_type = sel_type
         self.selector = selector
@@ -65,12 +83,15 @@ class U32TCCode(AbstractCode):
         '''Printable form of U32TC instructions'''
 
         if self.sel_type is None:
-            return f"match {self.selector} {self.val} {self.mask} {self.at}"
+            return f"match {self.selector} 0x{self.val:x} 0x{self.mask:x} at {self.at}"
 
-        if self.val is not None:
-            return f"match {self.sel_type} {self.selector} {self.val} {self.mask}"
-
-        return f"match {self.sel_type} {self.selector}"
+        if self.mask != 0:
+            ret = f"match {self.sel_type} {self.selector} 0x{self.val:x} 0x{self.mask:x}"
+        else:
+            ret = f"match {self.sel_type} {self.selector}"
+        if self.at is not None:
+            ret += " at {self.at}"
+        return ret
 
 V4_NET_REGEXP = re.compile(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})")
 
@@ -87,7 +108,7 @@ class U32TCHelper(AbstractHelper):
         super().dump_code(fmt, options)
 
         res = ""
-        
+
         for insn in self.get_code():
             res += f"{insn}\n"
 
@@ -157,11 +178,16 @@ class U32TCProgL3(U32TCHelper):
         self.add_code([U32TCCode(
             None,
             "u8",
-            self.match_object,
-            0xFF,
+            None,
+            val=int(self.match_object),
+            mask=0xFF,
             at=9
         )])
 
+class U32TCProgTCP(U32TCProgL3):
+    '''Basic match on IP - any shape or form,
+       added before matching on address, proto, etc.
+    '''
 
 class U32TCProgIPAny(U32TCHelper):
     '''Basic match on v4 address or network.
@@ -218,6 +244,149 @@ class U32TCProgOR(U32TCHelper):
     def compile(self, compiler_state=None):
         '''Compile OR - inverse true and false'''
         raise ValueError("NOT not supported in U32TC")
+
+class U32TCProgPortRange(U32TCHelper):
+    '''Basic match on IP - any shape or form,
+       added before matching on address, proto, etc.
+    '''
+    def compile(self, compiler_state=None):
+        '''Compile the code'''
+
+        super().compile(compiler_state)
+
+        try:
+            left = self.attribs["loc"][0]
+            try:
+                right = self.attribs["loc"][1]
+            except IndexError:
+                right = left
+            left.compile(compiler_state)
+            right.compile(compiler_state)
+        except KeyError:
+            left = right = self.pcap_obj.frags[0]
+
+        if left.result is None or right.result is None:
+            raise ValueError("U32 does not allow dynamic offset computation")
+
+        (value, mask) = compute_val_mask(left.result, right.result)
+
+        location = 0
+
+        if "src" in self.pcap_obj.quals:
+            self.add_code([U32TCCode(
+                None,
+                "u16",
+                "",
+                val=value,
+                mask=mask,
+                at=f"nexthrdr+ {location}"
+            )])
+
+        if "dst" in self.pcap_obj.quals:
+            location = location + 2
+            self.add_code([U32TCCode(
+                None,
+                "u16",
+                "",
+                val=value,
+                mask=mask,
+                at=f"nexthrdr+ {location}"
+            )])
+
+class U32ProgLoad(U32TCHelper):
+    '''Load a value from packet address
+    '''
+
+class U32TCProgIndexLoad(U32TCHelper):
+    '''Perform arithmetic operations.
+    '''
+
+COMPUTE_TABLE = {
+    "+" : lambda x, y: x + y,
+    "-" : lambda x, y: x - y,
+    "*" : lambda x, y: x * y,
+    "/" : lambda x, y: x / y,
+    "%" : lambda x, y: x % y,
+    "&" : lambda x, y: x & y,
+    "|" : lambda x, y: x | y,
+    "^" : lambda x, y: x ^ y,
+    "<<" : lambda x, y: x << y,
+    ">>" : lambda x, y: x >> y,
+    "<" : lambda x, y: x < y,
+    ">" : lambda x, y: x > y,
+    "==" : lambda x, y: x == y,
+    "!=" : lambda x, y: not x == y,
+    ">=" : lambda x, y: x >= y,
+    "<=" : lambda x, y: x <= y
+}
+
+
+def compute(left, op, right):
+    '''Dumb calculcator'''
+    return COMPUTE_TABLE[op](left, right)
+
+
+class U32TCProgComp(U32TCHelper):
+    '''Perform arithmetic comparisons.
+    '''
+
+    def compile(self, compiler_state=None):
+        '''Compile comparison between operands'''
+
+        left = self.pcap_obj.left
+        right = self.pcap_obj.right
+
+        super().compile(compiler_state)
+
+        if left.result is not None and right.result is not None:
+            self.pcap_obj.result = compute(left.result, self.attribs["op"], right.result)
+            return
+
+        if right.result is None:
+            raise ValueError("Only static expressions are allowed for values")
+        try:
+            location = left.attribs["loc"].attribs["match_object"]
+        except AttributeError:
+            location = int(left.attribs["loc"])
+
+        try:
+            size = left.attribs["size"]
+        except KeyError:
+            size = 4
+
+        if self.attribs["op"] == "==":
+            self.add_code([U32TCCode(
+                None,
+                "u{}".format(size * 8),
+                "",
+                val=int(right.result),
+                mask=(1 << size*8) - 1,
+                at=f"nexthrdr+ {location}"
+            )])
+
+
+class U32TCImmediate(U32TCHelper):
+    '''Fake leafe for immediate ops
+    '''
+    def compile(self, compiler_state=None):
+        self.pcap_obj.result = self.match_object
+
+class U32TCProgArOp(U32TCHelper):
+    '''Perform arithmetic operations.
+    '''
+
+    def compile(self, compiler_state=None):
+        '''Compile arithmetics'''
+
+        left = self.pcap_obj.left
+        right = self.pcap_obj.right
+
+        super().compile(compiler_state)
+
+        if self.left.result is not None and self.right.result is not None:
+            self.pcap_obj.result = compute(left.result, self.attribs["op"], right.result)
+
+
 
 def dispatcher(obj):
     '''Return the correct code helper'''
