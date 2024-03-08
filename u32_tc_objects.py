@@ -107,12 +107,12 @@ class U32TCHelper(AbstractHelper):
 
         super().dump_code(fmt, options)
 
-        res = ""
+        res = []
 
         for insn in self.get_code():
-            res += f"{insn}\n"
+            res.append(f"{insn}")
 
-        return res
+        return " \\\n".join(res) 
 
 
     @property
