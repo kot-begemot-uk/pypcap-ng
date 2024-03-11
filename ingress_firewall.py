@@ -115,12 +115,42 @@ def form_tc_args(interface, rule, options):
         code = rule.dump_code("u32tc", "iptables", options)
         if len(code) > 0:
             res = f"{tc_bin} filter add {interface} "
-            res += f"handle 1: prio 1 u32 '{code}' action drop skip_sw"
+            res += f"handle 1: prio 1 u32 {code} action drop skip_sw"
     except KeyError:
         pass
 
     return res
 
+def form_args(interface, rule, mode, options):
+    '''Form iptables arguments'''
+
+    res = ""
+
+    u32_ok = False
+
+    if rule.v6:
+        iptables = "/sbin/ip6tables"
+    else:
+        iptables = "/sbin/iptables"
+
+    if mode in ["u32", "auto"]:
+        try:
+            code = rule.dump_code("u32", "iptables", options)
+            if len(code) > 0:
+                res = f"{iptables} -A IFW -j {rule.action} -i {interface} -m u32  --u32 '{code}'"
+                u32_ok = True
+        except KeyError:
+            pass
+
+    if not u32_ok and mode in ["cbpf", "auto"]:
+        try:
+            code = rule.dump_code("cbpf", "iptables", options)
+            if len(code) > 0:
+                res = f"{iptables} -A IFW -j {rule.action} -i {interface} -m bpf --bpf '{code}'"
+        except KeyError:
+            pass
+
+    return res
 
 def dry_run_u32_apply_fn(interface, rule, options):
     '''Dry run function - print the rules which will be applied'''
@@ -148,7 +178,7 @@ def iptables_u32_apply_fn(interface, rule, options):
 def iptables_u32tc_apply_fn(interface, rule, options):
     '''Apply via tc'''
     try:
-        subprocess.run(form_tc_rgs(interface, rule, options), shell=True, check=True)
+        subprocess.run(form_tc_args(interface, rule, options), shell=True, check=True)
         return True
     except subprocess.CalledProcessError:
         return False
@@ -162,8 +192,8 @@ def iptables_cbpf_apply_fn(interface, rule, options):
         return False
 
 IF_FLUSH_DATA = [
-    "/sbin/tc filter del dev {inteface} prio 1"
-    "/sbin/tc qdisc del dev {interface} handle 1:"
+    "/sbin/tc filter del dev {} prio 1",
+    "/sbin/tc qdisc del dev {} handle 1:"
 ]
 
 FLUSH_DATA = [
@@ -171,10 +201,10 @@ FLUSH_DATA = [
     "/sbin/ip6tables -F IFW",
 ]
 
-IF_PREAMBLE_DATA = [
-    "/sbin/tc qdisc add dev {interface} ingress",
-]
-
+IF_PREAMBLE_DATA = IF_FLUSH_DATA.copy()
+IF_PREAMBLE_DATA.extend([
+    "/sbin/tc qdisc add dev {} ingress",
+])
 
 PREAMBLE_DATA = [
     "/sbin/iptables -D INPUT -j IFW",
@@ -188,68 +218,20 @@ PREAMBLE_DATA = [
     "/sbin/ip6tables -I INPUT -j IFW",
 ]
 
+IF_CLOSURE_DATA = []
+
 CLOSURE_DATA = [
     "/sbin/iptables -A IFW -j RETURN",
     "/sbin/ip6tables -A IFW -j RETURN"
 ]
 
-IF_CLOSURE_DATA = []
+def activate_fn(data):
+    '''Global config stanzas'''
+    subprocess.run(data, shell=True, check=False)
 
-def dryrun_flush_fn():
-    '''Apply via iptables'''
-    for flush in FLUSH_DATA:
-        print(flush)
-
-def dryrun_if_flush_fn(interface):
-    '''Apply via iptables'''
-    for flush in IF_FLUSH_DATA:
-        print(flush)
-
-def dryrun_preamble_fn():
-    '''Apply via iptables'''
-    for preamble in PREAMBLE_DATA:
-        print(preamble)
-
-def dryrun_if_preamble_fn(interface):
-    for preamble in IF_PREAMBLE_DATA:
-        print(preamble)
-
-def dryrun_closure_fn():
-    '''Apply via iptables'''
-    for closure in CLOSURE_DATA:
-        print(closure)
-
-def dryrun_if_closure_fn(interface):
-    for flush in IF_CLOSURE_DATA:
-        print(flush)
-
-def iptables_flush_fn():
-    '''Apply via iptables'''
-    for flush in FLUSH_DATA:
-        subprocess.run(flush, shell=True, check=False)
-
-def iptables_if_flush_fn(interface):
-    for flush in IF_FLUSH_DATA:
-        subprocess.run(flush, shell=True, check=False)
-
-def iptables_preamble_fn():
-    '''Apply via iptables'''
-    for preamble in PREAMBLE_DATA:
-        subprocess.run(preamble, shell=True, check=False)
-
-def iptables_if_preamble_fn(interface):
-    for preamble in IF_PREAMBLE_DATA:
-        subprocess.run(preamble, shell=True, check=False)
-
-def iptables_closure_fn():
-    '''Apply via iptables'''
-    for closure in CLOSURE_DATA:
-        subprocess.run(closure, shell=True, check=False)
-
-def iptables_if_closure_fn(interface):
-    for closure in IF_CLOSURE_DATA:
-        subprocess.run(closure, shell=True, check=False)
-
+def dryrun_fn(data):
+    '''Global config stanzas'''
+    print(data)
 
 PROTO_MAP = {
     "ICMP":process_icmp,
@@ -268,36 +250,18 @@ ACTIVATORS = {
     "iptables-u32tc":iptables_u32tc_apply_fn
 }
 
-
-PREAMBLES = {
-    "dryrun":dryrun_preamble_fn,
-    "iptables":iptables_preamble_fn,
+MODES = {
+    "dryrun":dryrun_fn,
+    "iptables":activate_fn
 }
 
-FLUSHES = {
-    "dryrun":dryrun_flush_fn,
-    "iptables":iptables_flush_fn,
-}
-
-CLOSURES = {
-    "dryrun":dryrun_closure_fn,
-    "iptables":iptables_closure_fn,
-}
-
-IF_PREAMBLES = {
-    "dryrun":dryrun_if_preamble_fn,
-    "iptables":iptables_if_preamble_fn,
-}
-
-IF_FLUSHES = {
-    "dryrun":dryrun_if_flush_fn,
-    "iptables":iptables_if_flush_fn,
-}
-
-IF_CLOSURES = {
-    "dryrun":dryrun_if_closure_fn,
-    "iptables":iptables_if_closure_fn,
-}
+def activate(mode, data, iface=None):
+    '''Mode specific Stanzas'''
+    for item in data:
+        try:
+            MODES[mode](item.format(iface))
+        except IndexError:
+            MODES[mode](item)
 
 
 def makefilter_rule(p_cfg, cidr):
@@ -343,13 +307,12 @@ class IngressFirewallPolicy(FirewallPolicy):
                 rule.add_helper(helper)
             rule.compile()
 
-    def apply_to_hardware(self, apply_fn):
+    def apply_to_hardware(self, apply_fn, offload=False):
         '''Apply Policy'''
-        while len(self.rules) > 0:
-            if apply_fn(self.interface, self.rules[0], self.options):
-                self.in_hardware.append(self.rules.pop(0))
-            else:
-                break
+        for rule in self.rules:
+            result = apply_fn(self.interface, rule, self.options)
+            if offload and result:
+                self.in_hardware.append(rule)
 
     def dump_rules(self, software=True):
         '''Dump all rules that have not been applied'''
@@ -395,14 +358,14 @@ def main():
     args = vars(aparser.parse_args())
 
     if args["flush"]:
-        FLUSHES["{}".format(args["mode"])]()
+        activate(args["mode"], FLUSH_DATA)
         for interface in model:
-            IF_FLUSHES["{}".format(args["mode"])](interface)
+            activate(args["mode"], IF_FLUSH_DATA, interface)
 
 
-    PREAMBLES["{}".format(args["mode"])]()
+    activate(args["mode"], PREAMBLE_DATA)
     for (interface, policy) in model.items():
-        IF_PREAMBLES["{}".format(args["mode"])](interface)
+        activate(args["mode"], IF_PREAMBLE_DATA, interface)
         ingress = IngressFirewallPolicy(interface, policy)
         ingress.generate_pcap()
         if args.get("debug"):
@@ -413,12 +376,12 @@ def main():
             for rule in ingress.rules:
                 for helper in rule.compiled.code.keys():
                     print(rule.compiled.get_code(helper))
+        ingress.apply_to_hardware(ACTIVATORS["{}-{}".format(args["mode"], "u32tc", True)])
         ingress.apply_to_hardware(ACTIVATORS["{}-{}".format(args["mode"], args["backend"])])
-        IF_CLOSURES["{}".format(args["mode"])](interface)
+        activate(args["mode"], IF_CLOSURE_DATA, interface)
 
     ingress.apply_to_hardware(ACTIVATORS["{}-{}".format(args["mode"], args["backend"])])
-
-    CLOSURES["{}".format(args["mode"])]()
+    activate(args["mode"], CLOSURE_DATA)
 
 
 if __name__ == "__main__":

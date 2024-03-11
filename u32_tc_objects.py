@@ -112,7 +112,7 @@ class U32TCHelper(AbstractHelper):
         for insn in self.get_code():
             res.append(f"{insn}")
 
-        return " \\\n".join(res) 
+        return " ".join(res) 
 
 
     @property

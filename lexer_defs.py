@@ -47,7 +47,7 @@ reserved = {
     'link' : 'LINK',
     'len' : 'LEN',
     'ip6' : 'IPV6',
-    'imcp6' : 'ICMPV6',
+    'icmp6' : 'ICMPV6',
     'ah' : 'AH',
     'esp' : 'ESP',
     'vlan' : 'VLAN',
