@@ -249,10 +249,20 @@ class U32TCProgPortRange(U32TCHelper):
     '''Basic match on IP - any shape or form,
        added before matching on address, proto, etc.
     '''
+
     def compile(self, compiler_state=None):
         '''Compile the code'''
 
-        super().compile(compiler_state)
+        self.compiled = True
+
+        proto = "udp"
+        for frag in self.attribs["frags"]:
+            if frag.name == "tcp":
+                proto = "tcp"
+                break
+    
+        # we do not run inhereted compile as we do not need the
+        # frag code
 
         try:
             left = self.attribs["loc"][0]
@@ -273,25 +283,17 @@ class U32TCProgPortRange(U32TCHelper):
         location = 0
 
         if "src" in self.pcap_obj.quals:
-            self.add_code([U32TCCode(
-                None,
-                "u16",
-                "",
-                val=value,
-                mask=mask,
-                at=f"nexthrdr+ {location}"
-            )])
-
-        if "dst" in self.pcap_obj.quals:
-            location = location + 2
-            self.add_code([U32TCCode(
-                None,
-                "u16",
-                "",
-                val=value,
-                mask=mask,
-                at=f"nexthrdr+ {location}"
-            )])
+            qual = "src"
+        else:
+            qual = "dst"
+        
+        self.add_code([U32TCCode(
+            proto,
+            qual,
+            "",
+            val=value,
+            mask=mask
+        )])
 
 class U32ProgLoad(U32TCHelper):
     '''Load a value from packet address

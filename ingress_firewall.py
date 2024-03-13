@@ -114,8 +114,8 @@ def form_tc_args(interface, rule, options):
     try:
         code = rule.dump_code("u32tc", "iptables", options)
         if len(code) > 0:
-            res = f"{tc_bin} filter add {interface} "
-            res += f"handle 1: prio 1 u32 {code} action drop skip_sw"
+            res = f"{tc_bin} filter add dev {interface} "
+            res += f"parent ffff: prio 1 u32 {code} action drop skip_sw"
     except KeyError:
         pass
 
@@ -193,7 +193,7 @@ def iptables_cbpf_apply_fn(interface, rule, options):
 
 IF_FLUSH_DATA = [
     "/sbin/tc filter del dev {} prio 1",
-    "/sbin/tc qdisc del dev {} handle 1:"
+    "/sbin/tc qdisc del dev {} handle ffff:"
 ]
 
 FLUSH_DATA = [
@@ -206,7 +206,8 @@ IF_PREAMBLE_DATA.extend([
     "/sbin/tc qdisc add dev {} ingress",
 ])
 
-PREAMBLE_DATA = [
+PREAMBLE_DATA = FLUSH_DATA.copy()
+PREAMBLE_DATA.extend([
     "/sbin/iptables -D INPUT -j IFW",
     "/sbin/iptables -X IFW",
     "/sbin/iptables -N IFW",
@@ -216,7 +217,7 @@ PREAMBLE_DATA = [
     "/sbin/ip6tables -X IFW",
     "/sbin/ip6tables -N IFW",
     "/sbin/ip6tables -I INPUT -j IFW",
-]
+])
 
 IF_CLOSURE_DATA = []
 
