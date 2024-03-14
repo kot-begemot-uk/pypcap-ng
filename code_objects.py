@@ -113,6 +113,10 @@ class AbstractCode(dict):
         '''Equal - needed for tests'''
         return self.labels == other.labels
 
+    def __repr_(self):
+        '''Used for the "aborted helper case"'''
+        return ""
+
 class AbortBranch(Exception):
     '''Indicate that this branch should not be compiled any further
        terminates the helper chain
@@ -120,6 +124,14 @@ class AbortBranch(Exception):
     def __init__(self, message):
         super().__init__(message)
 
+class AbortHelper(Exception):
+    '''Indicate that this branch should not be compiled any further
+       terminates the helper chain
+    '''
+    def __init__(self, message):
+        super().__init__(message)
+
+ABORTED = [AbstractCode(label=["__ABORT__"])]
 
 class AbstractProgram():
     '''Chunk of code - fragments can be matchers or other programs'''
@@ -241,8 +253,15 @@ class AbstractProgram():
         '''Resulting code dump'''
         code = []
         for frag in self.frags:
-            code.extend(frag.get_code(code_id))
+            newcode = frag.get_code(code_id)
+            for insn in newcode:
+                if insn.has_label("__ABORT__"):
+                    return ABORTED
+            code.extend(newcode)
         try:
+            for insn in self.code[code_id]:
+                if insn.has_label("__ABORT__"):
+                    return ABORTED
             code.extend(self.code[code_id])
         except KeyError:
             pass
@@ -319,6 +338,7 @@ class AbstractProgram():
         self.code[code_id].extend(code)
         self.code[code_id][0].add_label(self.ext_label)
 
+
     def add_offset_code(self, code, code_id):
         '''Add offset specific code.
            This is bytecode specific and will not work for most
@@ -355,6 +375,8 @@ class AbstractProgram():
                     for frag in self.frags:
                         frag.drop_branch()
                     break
+                except AbortHelper:
+                    self.code[helper.helper_id] = ABORTED
 
         for frag in self.frags:
             frag.update_labels()

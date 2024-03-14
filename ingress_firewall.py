@@ -113,9 +113,11 @@ def form_tc_args(interface, rule, options):
 
     try:
         code = rule.dump_code("u32tc", "iptables", options)
-        if len(code) > 0:
+        if code is not None:
             res = f"{tc_bin} filter add dev {interface} "
             res += f"parent ffff: prio 1 u32 {code} action drop skip_sw"
+        else:
+            code = "/bin/true"
     except KeyError:
         pass
 
@@ -192,8 +194,8 @@ def iptables_cbpf_apply_fn(interface, rule, options):
         return False
 
 IF_FLUSH_DATA = [
-    "/sbin/tc filter del dev {} prio 1",
-    "/sbin/tc qdisc del dev {} handle ffff:"
+    "/sbin/tc filter del dev {} prio 1 parent ffff:",
+    "/sbin/tc qdisc del dev {} handle ffff: parent ffff:fff1"
 ]
 
 FLUSH_DATA = [

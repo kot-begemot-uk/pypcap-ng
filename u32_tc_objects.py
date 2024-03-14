@@ -12,7 +12,7 @@ import sys
 import re
 import ipaddress
 from header_constants import ETHER, IP, IP6, ETH_PROTOS
-from code_objects import AbstractCode, AbstractHelper
+from code_objects import AbstractCode, AbstractHelper, AbortHelper
 
 
 # Some of the names are predefined. They are instruction names. We
@@ -110,7 +110,10 @@ class U32TCHelper(AbstractHelper):
         res = []
 
         for insn in self.get_code():
-            res.append(f"{insn}")
+            if isinstance(insn, U32TCCode):
+                res.append(f"{insn}")
+            else:
+                return None
 
         return " ".join(res) 
 
@@ -334,37 +337,8 @@ class U32TCProgComp(U32TCHelper):
 
     def compile(self, compiler_state=None):
         '''Compile comparison between operands'''
+        raise AbortHelper("Peek comparisons at nexthdr+ are not supported at present")
 
-        left = self.pcap_obj.left
-        right = self.pcap_obj.right
-
-        super().compile(compiler_state)
-
-        if left.result is not None and right.result is not None:
-            self.pcap_obj.result = compute(left.result, self.attribs["op"], right.result)
-            return
-
-        if right.result is None:
-            raise ValueError("Only static expressions are allowed for values")
-        try:
-            location = left.attribs["loc"].attribs["match_object"]
-        except AttributeError:
-            location = int(left.attribs["loc"])
-
-        try:
-            size = left.attribs["size"]
-        except KeyError:
-            size = 4
-
-        if self.attribs["op"] == "==":
-            self.add_code([U32TCCode(
-                None,
-                "u{}".format(size * 8),
-                "",
-                val=int(right.result),
-                mask=(1 << size*8) - 1,
-                at=f"nexthrdr+ {location}"
-            )])
 
 
 class U32TCImmediate(U32TCHelper):
